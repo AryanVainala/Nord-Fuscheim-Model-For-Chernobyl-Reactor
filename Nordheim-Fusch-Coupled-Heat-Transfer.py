@@ -18,8 +18,11 @@ ell = 0.01
 m0 = 190000  # kg
 c_solid = 300  # J/kg/K
 c_liquid = 506  # J/kg/K
+c_vapor = 900  # J/kg/K (estimated for UO2 vapor)
 T_melt = 3120  # K
+T_boil = 3815  # K
 L_f = 259230  # J/kg
+L_v = 1588122  # J/kg
 A_ht = 1000  # m^2, effective heat transfer area
 
 # Coolant properties
@@ -62,14 +65,21 @@ def compute_void_reactivity(P):
 def get_fuel_temperature(Q):
     Q_melt_start = m0 * c_solid * T_melt
     Q_melt_end = Q_melt_start + m0 * L_f
+    Q_vap_start = Q_melt_end + m0 * c_liquid * (T_boil - T_melt)
+    Q_vap_end = Q_vap_start + m0 * L_v
 
     if Q < Q_melt_start:
         return Q / (m0 * c_solid)
     elif Q < Q_melt_end:
         return T_melt
-    else:
+    elif Q < Q_vap_start:
         Q_liquid = Q - Q_melt_end
         return T_melt + Q_liquid / (m0 * c_liquid)
+    elif Q < Q_vap_end:
+        return T_boil
+    else:
+        Q_superheat = Q - Q_vap_end
+        return T_boil + Q_superheat / (m0 * c_vapor)
 
 # -------------------------
 # Reactor Dynamics Function
@@ -83,7 +93,6 @@ def reactor_kinetics(t, y):
     rho_total = rho_0 - alpha_T * T_fuel + rho_coolant
     dPdt = (rho_total / ell) * P
 
-    # Modulated heat transfer coefficient
     h_eff = h_liquid * (1 - x_out) + h_vapor * x_out
     Q_transfer = h_eff * A_ht * (T_fuel - T_coolant)
 
@@ -96,7 +105,7 @@ def reactor_kinetics(t, y):
 # Initial Conditions & Solve
 # -------------------------
 
-P0 = 1000
+P0 = 200
 Q0 = 0
 T_c0 = T_coolant_0
 y0 = [P0, Q0, T_c0]
@@ -123,40 +132,34 @@ t_coolant_peak = t[np.argmax(T_coolant)]
 # Plot
 plt.figure(figsize=(12, 8))
 
-# Power plot
 plt.subplot(3, 1, 1)
 plt.plot(t, P, 'k', label='Power (MW)')
 plt.ylabel('Power [MW]')
 plt.grid()
 plt.legend()
 annotation = (
-    rf"$P_{{\max}}$ = {P_peak:,.0f} MW, $t_{{\max}}$ = {t_peak:.2f} s"+"\n"
+    rf"$P_{{\max}}$ = {P_peak:,.0f} MW"+"\n"
+    rf"$t_{{\max}}$ = {t_peak:.2f} s"+"\n"
     rf"$E_{{\mathrm{{tot}}}}$ = {E_total:.2f} GJ"
 )
-
-
-
 plt.text(0.01, 0.95, annotation, transform=plt.gca().transAxes,
          fontsize=12, verticalalignment='top',
          bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
 
-# Fuel temperature plot
 plt.subplot(3, 1, 2)
 plt.plot(t, T_fuel, 'r', label='Fuel Temp [K]')
 plt.ylabel('Fuel Temp [K]')
 plt.grid()
 plt.legend()
-plt.plot(t_fuel_peak, T_fuel_peak, 'ro')  # highlight peak
+plt.plot(t_fuel_peak, T_fuel_peak, 'ro')
 plt.text(t_fuel_peak, T_fuel_peak + 200, f'Peak: {T_fuel_peak:.0f} K', color='r')
 
-# Coolant temperature plot
 plt.subplot(3, 1, 3)
 plt.plot(t, T_coolant, 'b', label='Coolant Temp [K]')
 plt.xlabel('Time [s]')
 plt.ylabel('Coolant Temp [K]')
 plt.grid()
 plt.legend()
-plt.plot(t_coolant_peak, T_coolant_peak, 'bo')  # highlight peak
 
 plt.tight_layout()
 plt.show()
