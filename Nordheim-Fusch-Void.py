@@ -14,7 +14,10 @@ ell = 0.01  # prompt neutron lifetime [s]
 
 # Fuel properties
 m0 = 190000  # fuel mass [kg]
-c = 216  # heat capacity [J/kg/K]
+c_solid =  300  # heat capacity of solid Uranium Dioxide [J/kg/K]
+c_liquid = 506 # heat capacity of liquid Uranium Dioxide [J/kg/K]
+T_melt = 3120 # melting point of uranium dioxide
+L_f = 259230 # lateent heat of fusion of uranium dioxide
 
 # Coolant parameters
 H = 7  # core height [m]
@@ -57,9 +60,22 @@ def compute_void_reactivity(P):
 # Differential Equations
 # -------------------------
 
+def get_fuel_temperature(Q):
+    Q_melt_start = m0 * c_solid * T_melt
+    Q_melt_end = Q_melt_start + m0 * L_f
+
+    if Q < Q_melt_start:
+        return Q / (m0 * c_solid)
+    elif Q < Q_melt_end:
+        return T_melt
+    else:
+        Q_liquid = Q - Q_melt_end
+        return T_melt + Q_liquid / (m0 * c_liquid)
+
+
 def reactor_kinetics(t, y):
     P, Q = y
-    T = Q / (m0 * c)  # [K]
+    T = get_fuel_temperature(Q)  # [K]
     rho_coolant = compute_void_reactivity(P)
     rho_total = rho_0 - alpha_T * T + rho_coolant
     dPdt = (rho_total / ell) * P
@@ -83,7 +99,7 @@ solution = solve_ivp(reactor_kinetics, t_span, y0, method='RK45', dense_output=T
 t = solution.t
 P = solution.y[0]
 Q = solution.y[1]
-T_fuel = Q / (m0 * c)  # [K]
+T_fuel = np.array([get_fuel_temperature(q) for q in Q])  # [K]
 
 
 # --- Peak Power and Total Energy output calculation --- #
